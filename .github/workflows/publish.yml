@@ -23,7 +23,7 @@ run-name: '${{ inputs.bashbrewArch }}: ${{ inputs.firstTag }} (${{ inputs.buildI
 permissions:
   contents: read
   actions: write # for https://github.com/andymckay/cancel-action (see usage below)
-  packages: write # for publish images to GitHub container registry
+  id-token: write # for AWS KMS signing (see usage below)
 concurrency:
   group: ${{ github.event.inputs.buildId }}
   cancel-in-progress: false
@@ -44,10 +44,19 @@ jobs:
         with:
           submodules: true
 
+      - name: Checkout upstream
+        uses: checkout
+        with:
+          repository: 'docker-library/official-images'
+          path: 'doi'
+
       # TODO on Linux, install Tianon's Docker builds (switch off "ubuntu-latest" to pin to something closer to something we publish Debian builds for OR just run Docker-in-Docker and use GITHUB_ENV to set DOCKER_HOST to a suitable value)
 
-      - uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
-      
+      - uses: ./.doi/.github/workflows/.bashbrew
+        with:
+          # avoid building because we want to skip the build and download a release instead (which will be way faster)
+          build: none # this will set BASHBREW_VERSION for us
+          # TODO improve the bashbrew action to download a release binary instead of building from source ("build: download", perhaps?)
       - name: Tools
         run: |
           mkdir .gha-bin
