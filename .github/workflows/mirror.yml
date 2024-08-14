@@ -17,14 +17,15 @@ jobs:
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Pull, tag, and push Docker images
+    - name: Get all tags of the Docker image
       run: |
-        # Specify the source Docker image (e.g., eclipse-temurin) and registry (e.g., ghcr.io)
         SOURCE_IMAGE="eclipse-temurin"
         TARGET_REGISTRY="ghcr.io/${{ github.repository_owner }}"
-        
-        # Pull all tags for the source image
-        for tag in $(docker manifest inspect --insecure --verbose ${SOURCE_IMAGE} | jq -r '.manifests[].digest'); do
+
+        # Get all tags from Docker Hub
+        TAGS=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/?page_size=100" | jq -r '.results[].name')
+
+        for tag in $TAGS; do
           echo "Processing tag: $tag"
           
           # Pull the image from Docker Hub
