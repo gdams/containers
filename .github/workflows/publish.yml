@@ -1,0 +1,159 @@
+name: Build
+on:
+  workflow_dispatch:
+    inputs:
+      buildId:
+        required: true
+        type: string
+      bashbrewArch:
+        required: true
+        type: choice
+        options:
+          - amd64
+          - windows-amd64
+      firstTag: # informational only, because "run-name" can't be set to a useful value otherwise
+        type: string
+      windowsVersion:
+        type: choice
+        options:
+          - '' # without this, it's technically "required" 🙃
+          - 2022
+          - 2019
+run-name: '${{ inputs.bashbrewArch }}: ${{ inputs.firstTag }} (${{ inputs.buildId }})'
+permissions:
+  contents: read
+  actions: write # for https://github.com/andymckay/cancel-action (see usage below)
+  packages: write # for publish images to GitHub container registry
+concurrency:
+  group: ${{ github.event.inputs.buildId }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: 'bash -Eeuo pipefail -x {0}'
+env:
+  BUILD_ID: ${{ inputs.buildId }}
+  BASHBREW_ARCH: ${{ inputs.bashbrewArch }}
+jobs:
+  build:
+    name: Build ${{ inputs.buildId }}
+    runs-on: ${{ inputs.bashbrewArch == 'windows-amd64' && format('windows-{0}', inputs.windowsVersion) || 'ubuntu-latest' }}
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          submodules: true
+
+      # TODO on Linux, install Tianon's Docker builds (switch off "ubuntu-latest" to pin to something closer to something we publish Debian builds for OR just run Docker-in-Docker and use GITHUB_ENV to set DOCKER_HOST to a suitable value)
+
+      - uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
+      
+      - name: Tools
+        run: |
+          mkdir .gha-bin
+          echo "$PWD/.gha-bin" >> "$GITHUB_PATH"
+
+          ext=''
+          if [ "$BASHBREW_ARCH" = 'windows-amd64' ]; then # TODO should we run "bashbrew-host-arch.sh" here instead?
+            ext='.exe'
+          fi
+
+          _download() {
+            # prefer wget, but "windows-2019" doesn't have it, so fall back to curl
+            local target="$1"; shift
+            local url="$1"; shift
+            if command -v wget > /dev/null; then
+              wget --timeout=5 -O "$target" "$url" --progress=dot:giga
+            else
+              curl -fL -o "$target" "$url"
+            fi
+          }
+
+          # https://github.com/docker-library/bashbrew/releases
+          [ -n "$BASHBREW_VERSION" ]
+          _download ".gha-bin/bashbrew$ext" "https://github.com/docker-library/bashbrew/releases/download/$BASHBREW_VERSION/bashbrew-$BASHBREW_ARCH$ext"
+          chmod +x ".gha-bin/bashbrew$ext"
+          ".gha-bin/bashbrew$ext" --version
+
+          # https://doi-janky.infosiftr.net/job/wip/job/crane
+          _download ".gha-bin/crane$ext" "https://doi-janky.infosiftr.net/job/wip/job/crane/lastSuccessfulBuild/artifact/crane-$BASHBREW_ARCH$ext"
+          # TODO checksum verification ("checksums.txt")
+          chmod +x ".gha-bin/crane$ext"
+          ".gha-bin/crane$ext" version
+
+      - name: JSON
+        run: |
+          json="$(
+            jq -L.scripts '
+              include "meta";
+              .[env.BUILD_ID]
+              | select(needs_build and .build.arch == env.BASHBREW_ARCH) # sanity check
+              | .commands = commands
+            ' builds.json
+          )"
+          [ -n "$json" ]
+
+          {
+            EOJSON="EOJSON-$RANDOM-$RANDOM-$RANDOM"
+            echo "json<<$EOJSON"
+            cat <<<"$json"
+            echo "$EOJSON"
+          } >> "$GITHUB_ENV"
+
+          mkdir build
+
+          # TODO signing prototype -- starting very small
+          shouldSign="$(jq <<<"$json" -L.scripts 'include "doi"; build_should_sign')"
+          [ "$shouldSign" = 'true' ] || [ "$shouldSign" = 'false' ] || exit 1
+          echo "shouldSign=$shouldSign" >> "$GITHUB_ENV"
+
+      - name: Check
+        run: |
+          img="$(jq <<<"$json" -r '.build.img')"
+          if crane digest "$img"; then
+            echo >&2 "error: '$img' already exists! cowardly refusing to overwrite it"
+            echo 'cancel=exists' >> "$GITHUB_OUTPUT"
+          else
+            echo 'cancel=' >> "$GITHUB_OUTPUT"
+          fi
+        id: check
+      - name: Cancel If Built
+        if: steps.check.outputs.cancel == 'exists'
+        uses: andymckay/cancel-action@435124153eb37d6a62a29d053a7e449652f89d51 # https://github.com/andymckay/cancel-action/commits/HEAD
+        # https://github.com/andymckay/cancel-action/issues/12
+      - name: Spin Wheels If Built (waiting for cancellation)
+        if: steps.check.outputs.cancel == 'exists'
+        run: |
+          while true; do
+            echo 'Waiting for build cancellation...'
+            sleep 30
+          done
+          exit 1
+
+      - name: Pull
+        run: |
+          cd build
+          shell="$(jq <<<"$json" -r '.commands.pull')"
+          eval "$shell"
+
+      - name: Build
+        run: |
+          cd build
+          shell="$(jq <<<"$json" -r '.commands.build')"
+          if grep <<<"$shell" -q ' buildx '; then
+            bk="$(../.doi/.bin/bashbrew-buildkit-env-setup.sh)"
+            bk="$(jq <<<"$bk" -r 'to_entries | map(.key + "=" + .value | @sh) | "export " + join(" ")')"
+            eval "$bk"
+          fi
+          eval "$shell"
+
+      - name: Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+          cd build
+          shell="$(jq <<<"$json" -r '.commands.push')"
+          eval "$shell"
+    
