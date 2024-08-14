@@ -44,5 +44,5 @@ jobs:
 
           # Build and push the image for all architectures defined in the manifest
           bashbrew build "$entry"
-          bashbrew push "$entry"
+          bashbrew push --target-namespace "${{ github.repository_owner }}" "$entry"
         done
