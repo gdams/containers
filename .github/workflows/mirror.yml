@@ -36,7 +36,7 @@ jobs:
         BASHBREW_BUILDKIT_SYNTAX: "docker/dockerfile:1@sha256:fe40cf4e92cd0c467be2cfc30657a680ae2398318afd50b0c80585784c604f28"
         BASHBREW_ARCHITECTURES: "amd64 arm64v8 ppc64le s390x"
       run: |
-        cd /home/runner/docker/official-image
+        cd /home/runner/docker/official-images
 
         # Process only the eclipse-temurin repo
         bashbrew list eclipse-temurin | while read -r entry; do
