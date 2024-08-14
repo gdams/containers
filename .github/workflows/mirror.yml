@@ -48,12 +48,11 @@ jobs:
               continue
             fi
 
-            TEMP_TAG="${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}"
+            TEMP_TAG="${SOURCE_IMAGE}:${tag}-${arch}"
 
             # Try pulling the image for the specific architecture
             if docker pull --platform=$platform ${SOURCE_IMAGE}:$tag; then
               docker tag ${SOURCE_IMAGE}:$tag $TEMP_TAG
-              docker push $TEMP_TAG
               ARCH_IMAGES+=("$TEMP_TAG")
             else
               echo "Skipping $platform for $tag - no matching manifest."
