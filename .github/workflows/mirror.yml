@@ -1,4 +1,4 @@
-name: Mirror Docker Images
+name: Build and Mirror Docker Images with Bashbrew
 
 on:
   schedule:
@@ -10,59 +10,32 @@ permissions:
   packages: write # Allows pushing to GitHub Container Registry
 
 jobs:
-  mirror:
+  build:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Check out the repository
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - name: Set up Docker Buildx
+      run: |
+        docker run --privileged --rm tonistiigi/binfmt --install all
+        docker buildx create --use
+
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Get all tags of the Docker image and supported architectures
-      run: |
-        SOURCE_IMAGE="eclipse-temurin"
-        TARGET_REGISTRY="ghcr.io/${{ github.repository_owner }}"
+    - name: Clone Official Images Repo
+      run: git clone https://github.com/docker-library/official-images.git
 
-        # Get all tags from Docker Hub
-        TAGS=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/?page_size=100" | jq -r '.results[].name')
-
-        for tag in $TAGS; do
-          echo "Processing tag: $tag"
-          
-          # Get the supported architectures for this tag
-          ARCHITECTURES=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/${tag}/" | jq -r '.images[].architecture' | sort -u)
-
-          # Create a new manifest for this tag
-          MANIFEST_IMAGES=""
-
-          for arch in $ARCHITECTURES; do
-            echo "Processing architecture: $arch for tag: $tag"
-            
-            platform="linux/$arch"
-            if [[ "$arch" == "windows-amd64" ]]; then
-              platform="windows/amd64"
-            fi
-
-            # Skip if trying to pull Windows images on Linux
-            if [[ "$arch" == "windows-amd64" ]] && [[ "$(uname -s)" != "Linux" ]]; then
-              echo "Skipping Windows-specific tag on a non-Windows runner: $tag"
-              continue
-            fi
-
-            # Pull the image for the specific architecture
-            if docker pull --platform=$platform ${SOURCE_IMAGE}:$tag; then
-              docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-              docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-              MANIFEST_IMAGES="${MANIFEST_IMAGES} ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag"
-            else
-              echo "Skipping $platform for $tag - no matching manifest."
-            fi
+    - name: Build and Push Docker Images with Bashbrew
+      uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
+      with:
+        args: |
+          cd official-images &&
+          export BASHBREW_ARCHITECTURES="amd64 arm64v8 ppc64le s390x" &&
+          bashbrew list --namespaces library --all eclipse-temurin | while read -r entry; do
+            echo "Processing entry: $entry"
+            bashbrew build --arch "$BASHBREW_ARCHITECTURES" "$entry"
+            bashbrew push --all --arch "$BASHBREW_ARCHITECTURES" "$entry"
           done
-
-          # If at least one architecture was successful, create and push a multi-platform manifest
-          if [ -n "$MANIFEST_IMAGES" ]; then
-            docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag ${MANIFEST_IMAGES}
-            docker manifest push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-          else
-            echo "No architectures were successfully pulled for tag: $tag"
-          fi
-        done
