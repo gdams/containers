@@ -25,24 +25,43 @@ jobs:
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Get all tags of eclipse-temurin
+    - name: Download Eclipse Temurin manifest file
+      run: wget https://raw.githubusercontent.com/docker-library/official-images/master/library/eclipse-temurin -O eclipse-temurin-manifest
+
+    - name: Parse manifest file and mirror images
       run: |
-        # Fetch the list of tags from the official eclipse-temurin Docker Hub repository
-        curl -s https://registry.hub.docker.com/v2/repositories/library/eclipse-temurin/tags/?page_size=100 | jq -r '.results[].name' > tags.txt
+        # Extract the relevant sections from the manifest file
+        awk '/^Tags: / {tags=$0} /^Architectures: / {arch=$0} /^Directory: / {dir=$0; print tags, arch, dir}' eclipse-temurin-manifest | while read -r line; do
+          tags=$(echo $line | awk '{print $2}')
+          archs=$(echo $line | awk '{print $4}')
+          dir=$(echo $line | awk '{print $6}')
 
-    - name: Mirror images to GitHub Container Registry
-      run: |
-        while IFS= read -r tag; do
-          src="eclipse-temurin:$tag"
-          dest="ghcr.io/${{ github.repository_owner }}/eclipse-temurin:$tag"
+          # Convert the tags and architectures into arrays
+          IFS=',' read -r -a tag_array <<< "$tags"
+          IFS=',' read -r -a arch_array <<< "$archs"
 
-          # Pull the manifest list (multi-platform image) from Docker Hub for all specified platforms
-          docker pull --platform=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x,linux/arm/v7,windows/amd64 $src
+          # Loop through each tag
+          for tag in "${tag_array[@]}"; do
+            src="eclipse-temurin:$tag"
+            dest="ghcr.io/${{ github.repository_owner }}/eclipse-temurin:$tag"
 
-          # Tag the manifest list for GitHub Container Registry
-          docker tag $src $dest
+            # Loop through each architecture
+            for arch in "${arch_array[@]}"; do
+              platform="linux/$arch"
+              if [[ "$arch" == "windows-amd64" ]]; then
+                platform="windows/amd64"
+              fi
 
-          # Push the manifest list to GitHub Container Registry
-          docker push $dest
+              # Pull, tag, and push each architecture-specific image
+              docker pull --platform=$platform $src
+              docker tag $src $dest-$arch
+              docker push $dest-$arch
+            done
 
-        done < tags.txt
+            # Create and push a multi-platform manifest
+            docker manifest create $dest \
+              $(for arch in "${arch_array[@]}"; do echo "$dest-$arch"; done)
+
+            docker manifest push $dest
+          done
+        done
