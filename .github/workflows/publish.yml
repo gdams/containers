@@ -45,7 +45,7 @@ jobs:
           submodules: true
 
       - name: Checkout upstream
-        uses: checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           repository: 'docker-library/official-images'
           path: 'doi'
