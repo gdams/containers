@@ -15,7 +15,10 @@ jobs:
 
     steps:
     - name: Check out the repository
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      uses: actions/checkout@v4
+
+    - name: Install Bashbrew
+      uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
 
     - name: Set up Docker Buildx
       run: |
@@ -29,13 +32,15 @@ jobs:
       run: git clone https://github.com/docker-library/official-images.git
 
     - name: Build and Push Docker Images with Bashbrew
-      uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
-      with:
-        args: |
-          cd official-images &&
-          export BASHBREW_ARCHITECTURES="amd64 arm64v8 ppc64le s390x" &&
-          bashbrew list --namespaces library --all eclipse-temurin | while read -r entry; do
-            echo "Processing entry: $entry"
-            bashbrew build --arch "$BASHBREW_ARCHITECTURES" "$entry"
-            bashbrew push --all --arch "$BASHBREW_ARCHITECTURES" "$entry"
-          done
+      run: |
+        cd official-images
+        export BASHBREW_ARCHITECTURES="amd64 arm64v8 ppc64le s390x"
+        
+        # Loop through each entry in the manifest list
+        bashbrew list --namespaces library --all eclipse-temurin | while read -r entry; do
+          echo "Processing entry: $entry"
+
+          # Build and push the image for all defined architectures
+          bashbrew build --arch "$BASHBREW_ARCHITECTURES" "$entry"
+          bashbrew push --all --arch "$BASHBREW_ARCHITECTURES" "$entry"
+        done
