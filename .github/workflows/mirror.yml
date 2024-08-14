@@ -31,6 +31,9 @@ jobs:
           # Get the supported architectures for this tag
           ARCHITECTURES=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/${tag}/" | jq -r '.images[].architecture' | sort -u)
 
+          # List to collect successfully pulled architecture images
+          SUCCESSFUL_ARCHS=()
+
           for arch in $ARCHITECTURES; do
             echo "Processing architecture: $arch for tag: $tag"
             
@@ -39,18 +42,29 @@ jobs:
               platform="windows/amd64"
             fi
 
+            # Skip if trying to pull Windows images on Linux
+            if [[ "$arch" == "windows-amd64" ]] && [[ "$(uname -s)" != "Linux" ]]; then
+              echo "Skipping Windows-specific tag on a non-Windows runner: $tag"
+              continue
+            fi
+
             # Try pulling the image for the specific architecture
             if docker pull --platform=$platform ${SOURCE_IMAGE}:$tag; then
-              docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}
-              docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}
+              docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+              docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+              SUCCESSFUL_ARCHS+=("$arch")
             else
               echo "Skipping $platform for $tag - no matching manifest."
             fi
           done
 
-          # Create and push a multi-platform manifest
-          docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag \
-            $(for arch in $ARCHITECTURES; do echo "${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}"; done)
+          # If at least one architecture was successful, create and push a multi-platform manifest
+          if [ ${#SUCCESSFUL_ARCHS[@]} -gt 0 ]; then
+            docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag \
+              $(for arch in ${SUCCESSFUL_ARCHS[@]}; do echo "${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag"; done)
 
-          docker manifest push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+            docker manifest push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+          else
+            echo "No architectures were successfully pulled for tag: $tag"
+          fi
         done
