@@ -33,7 +33,7 @@ jobs:
 
     - name: Build and Push Docker Images with Bashbrew
       run: |
-        cd official-images
+        cd /home/runner/docker/official-images
         export BASHBREW_ARCHITECTURES="amd64 arm64v8 ppc64le s390x"
         
         # Loop through each entry in the manifest list
