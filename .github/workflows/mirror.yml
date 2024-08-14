@@ -28,6 +28,12 @@ jobs:
         for tag in $TAGS; do
           echo "Processing tag: $tag"
           
+          # Check if the tag is Windows-specific
+          if [[ "$tag" == *"windowsservercore"* ]] || [[ "$tag" == *"nanoserver"* ]]; then
+            echo "Skipping Windows-specific tag: $tag"
+            continue
+          fi
+          
           # Pull the image from Docker Hub
           docker pull ${SOURCE_IMAGE}:$tag
           
