@@ -32,7 +32,7 @@ jobs:
           ARCHITECTURES=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/${tag}/" | jq -r '.images[].architecture' | sort -u)
 
           # List to collect successfully pulled architecture images
-          SUCCESSFUL_ARCHS=()
+          ARCH_IMAGES=()
 
           for arch in $ARCHITECTURES; do
             echo "Processing architecture: $arch for tag: $tag"
@@ -48,22 +48,27 @@ jobs:
               continue
             fi
 
+            TEMP_TAG="${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}"
+
             # Try pulling the image for the specific architecture
             if docker pull --platform=$platform ${SOURCE_IMAGE}:$tag; then
-              docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-              docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-              SUCCESSFUL_ARCHS+=("${platform}")
+              docker tag ${SOURCE_IMAGE}:$tag $TEMP_TAG
+              docker push $TEMP_TAG
+              ARCH_IMAGES+=("$TEMP_TAG")
             else
               echo "Skipping $platform for $tag - no matching manifest."
             fi
           done
 
           # If at least one architecture was successful, create and push a multi-platform manifest
-          if [ ${#SUCCESSFUL_ARCHS[@]} -gt 0 ]; then
-            docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag \
-              $(for arch in ${SUCCESSFUL_ARCHS[@]}; do echo "${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag"; done)
-
+          if [ ${#ARCH_IMAGES[@]} -gt 0 ]; then
+            docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag ${ARCH_IMAGES[@]}
             docker manifest push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+
+            # Delete the temporary tags
+            for temp_tag in "${ARCH_IMAGES[@]}"; do
+              docker rmi $temp_tag
+            done
           else
             echo "No architectures were successfully pulled for tag: $tag"
           fi
