@@ -23,7 +23,7 @@ run-name: '${{ inputs.bashbrewArch }}: ${{ inputs.firstTag }} (${{ inputs.buildI
 permissions:
   contents: read
   actions: write # for https://github.com/andymckay/cancel-action (see usage below)
-  id-token: write # for AWS KMS signing (see usage below)
+  packages: write # for publishing to ghcr.io
 concurrency:
   group: ${{ github.event.inputs.buildId }}
   cancel-in-progress: false
@@ -44,11 +44,17 @@ jobs:
         with:
           submodules: true
 
-      - name: Checkout upstream
+      - name: Checkout docker-library/official-images
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           repository: 'docker-library/official-images'
           path: '.doi'
+
+      - name: Checkout docker-library/meta-scripts
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          repository: 'docker-library/meta-scripts'
+          path: '.scripts'
 
       # TODO on Linux, install Tianon's Docker builds (switch off "ubuntu-latest" to pin to something closer to something we publish Debian builds for OR just run Docker-in-Docker and use GITHUB_ENV to set DOCKER_HOST to a suitable value)
 
@@ -110,11 +116,6 @@ jobs:
           } >> "$GITHUB_ENV"
 
           mkdir build
-
-          # TODO signing prototype -- starting very small
-          shouldSign="$(jq <<<"$json" -L.scripts 'include "doi"; build_should_sign')"
-          [ "$shouldSign" = 'true' ] || [ "$shouldSign" = 'false' ] || exit 1
-          echo "shouldSign=$shouldSign" >> "$GITHUB_ENV"
 
       - name: Check
         run: |
