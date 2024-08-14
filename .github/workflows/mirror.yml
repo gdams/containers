@@ -36,11 +36,11 @@ jobs:
         cd /home/runner/docker/official-images
         export BASHBREW_ARCHITECTURES="amd64 arm64v8 ppc64le s390x"
         
-        # Loop through each entry in the manifest list
-        bashbrew list --namespaces library --all eclipse-temurin | while read -r entry; do
+        # Process only the eclipse-temurin repo
+        bashbrew list eclipse-temurin | while read -r entry; do
           echo "Processing entry: $entry"
 
-          # Build and push the image for all defined architectures
-          bashbrew build --arch "$BASHBREW_ARCHITECTURES" "$entry"
-          bashbrew push --all --arch "$BASHBREW_ARCHITECTURES" "$entry"
+          # Build and push the image for all architectures defined in the manifest
+          bashbrew build "$entry"
+          bashbrew push "$entry"
         done
