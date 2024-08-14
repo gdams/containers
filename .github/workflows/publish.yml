@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           repository: 'docker-library/official-images'
-          path: 'doi'
+          path: '.doi'
 
       # TODO on Linux, install Tianon's Docker builds (switch off "ubuntu-latest" to pin to something closer to something we publish Debian builds for OR just run Docker-in-Docker and use GITHUB_ENV to set DOCKER_HOST to a suitable value)
 
