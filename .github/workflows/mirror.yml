@@ -47,15 +47,19 @@ jobs:
 
             # Loop through each architecture
             for arch in "${arch_array[@]}"; do
+              # Set platform for non-Windows architectures
               platform="linux/$arch"
               if [[ "$arch" == "windows-amd64" ]]; then
                 platform="windows/amd64"
               fi
 
-              # Pull, tag, and push each architecture-specific image
-              docker pull --platform=$platform $src
-              docker tag $src $dest-$arch
-              docker push $dest-$arch
+              # Try pulling the image for the specific architecture
+              if docker pull --platform=$platform $src; then
+                docker tag $src $dest-$arch
+                docker push $dest-$arch
+              else
+                echo "Skipping $platform for $src - no matching manifest."
+              fi
             done
 
             # Create and push a multi-platform manifest
