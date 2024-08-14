@@ -17,7 +17,7 @@ jobs:
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Get all tags of the Docker image
+    - name: Get all tags of the Docker image and supported architectures
       run: |
         SOURCE_IMAGE="eclipse-temurin"
         TARGET_REGISTRY="ghcr.io/${{ github.repository_owner }}"
@@ -28,18 +28,29 @@ jobs:
         for tag in $TAGS; do
           echo "Processing tag: $tag"
           
-          # Check if the tag is Windows-specific
-          if [[ "$tag" == *"windowsservercore"* ]] || [[ "$tag" == *"nanoserver"* ]]; then
-            echo "Skipping Windows-specific tag: $tag"
-            continue
-          fi
-          
-          # Pull the image from Docker Hub
-          docker pull ${SOURCE_IMAGE}:$tag
-          
-          # Tag the image for the target registry
-          docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
-          
-          # Push the tagged image to the target registry
-          docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+          # Get the supported architectures for this tag
+          ARCHITECTURES=$(curl -s "https://registry.hub.docker.com/v2/repositories/library/${SOURCE_IMAGE}/tags/${tag}/" | jq -r '.images[].architecture' | sort -u)
+
+          for arch in $ARCHITECTURES; do
+            echo "Processing architecture: $arch for tag: $tag"
+            
+            platform="linux/$arch"
+            if [[ "$arch" == "windows-amd64" ]]; then
+              platform="windows/amd64"
+            fi
+
+            # Try pulling the image for the specific architecture
+            if docker pull --platform=$platform ${SOURCE_IMAGE}:$tag; then
+              docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}
+              docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}
+            else
+              echo "Skipping $platform for $tag - no matching manifest."
+            fi
+          done
+
+          # Create and push a multi-platform manifest
+          docker manifest create ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag \
+            $(for arch in $ARCHITECTURES; do echo "${TARGET_REGISTRY}/${SOURCE_IMAGE}:${tag}-${arch}"; done)
+
+          docker manifest push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
         done
