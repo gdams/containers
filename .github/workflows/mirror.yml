@@ -1,4 +1,4 @@
-name: Mirror Eclipse Temurin Docker Images
+name: Mirror Docker Images
 
 on:
   schedule:
@@ -14,58 +14,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-
-    - name: Set up Docker Buildx
-      run: |
-        docker run --privileged --rm tonistiigi/binfmt --install all
-        docker buildx create --use
-
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Download Eclipse Temurin manifest file
-      run: wget https://raw.githubusercontent.com/docker-library/official-images/master/library/eclipse-temurin -O eclipse-temurin-manifest
-
-    - name: Parse manifest file and mirror images
+    - name: Pull, tag, and push Docker images
       run: |
-        # Extract the relevant sections from the manifest file
-        awk '/^Tags: / {tags=$0} /^Architectures: / {arch=$0} /^Directory: / {dir=$0; print tags, arch, dir}' eclipse-temurin-manifest | while read -r line; do
-          tags=$(echo $line | awk '{print $2}')
-          archs=$(echo $line | awk '{print $4}')
-          dir=$(echo $line | awk '{print $6}')
-
-          # Convert the tags and architectures into arrays
-          IFS=',' read -r -a tag_array <<< "$tags"
-          IFS=',' read -r -a arch_array <<< "$archs"
-
-          # Loop through each tag
-          for tag in "${tag_array[@]}"; do
-            src="eclipse-temurin:$tag"
-            dest="ghcr.io/${{ github.repository_owner }}/eclipse-temurin:$tag"
-
-            # Loop through each architecture
-            for arch in "${arch_array[@]}"; do
-              # Set platform for non-Windows architectures
-              platform="linux/$arch"
-              if [[ "$arch" == "windows-amd64" ]]; then
-                platform="windows/amd64"
-              fi
-
-              # Try pulling the image for the specific architecture
-              if docker pull --platform=$platform $src; then
-                docker tag $src $dest-$arch
-                docker push $dest-$arch
-              else
-                echo "Skipping $platform for $src - no matching manifest."
-              fi
-            done
-
-            # Create and push a multi-platform manifest
-            docker manifest create $dest \
-              $(for arch in "${arch_array[@]}"; do echo "$dest-$arch"; done)
-
-            docker manifest push $dest
-          done
+        # Specify the source Docker image (e.g., eclipse-temurin) and registry (e.g., ghcr.io)
+        SOURCE_IMAGE="eclipse-temurin"
+        TARGET_REGISTRY="ghcr.io/${{ github.repository_owner }}"
+        
+        # Pull all tags for the source image
+        for tag in $(docker manifest inspect --insecure --verbose ${SOURCE_IMAGE} | jq -r '.manifests[].digest'); do
+          echo "Processing tag: $tag"
+          
+          # Pull the image from Docker Hub
+          docker pull ${SOURCE_IMAGE}:$tag
+          
+          # Tag the image for the target registry
+          docker tag ${SOURCE_IMAGE}:$tag ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
+          
+          # Push the tagged image to the target registry
+          docker push ${TARGET_REGISTRY}/${SOURCE_IMAGE}:$tag
         done
