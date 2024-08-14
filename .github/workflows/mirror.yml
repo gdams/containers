@@ -1,48 +1,78 @@
-name: Build and Mirror Docker Images with Bashbrew
-
+name: 'Mirror Eclipse Temurin to GHCR'
 on:
   schedule:
-    - cron: "0 0 * * *" # Runs every day at midnight UTC
-  workflow_dispatch: # Allows manual triggering
-
-permissions:
-  contents: read
-  packages: write # Allows pushing to GitHub Container Registry
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
+  workflow_dispatch:     # Allows for manual trigger of the action
 
 jobs:
-  build:
+  mirror-temurin:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@v4
-
-    - name: Install Bashbrew
-      uses: docker-library/bashbrew@d23b94357ef16d21a8d14578d5338152e4460c91 # v0.1.12
+    - name: Checkout repository
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
     - name: Set up Docker Buildx
-      run: |
-        docker run --privileged --rm tonistiigi/binfmt --install all
-        docker buildx create --use
+      uses: docker/setup-buildx-action@v2
 
     - name: Log in to GitHub Container Registry
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Clone Official Images Repo
-      run: git clone https://github.com/docker-library/official-images.git /home/runner/docker/official-images
-
-    - name: Build and Push Docker Images with Bashbrew
-      env:
-        BASHBREW_BUILDKIT_SYNTAX: "docker/dockerfile:1@sha256:fe40cf4e92cd0c467be2cfc30657a680ae2398318afd50b0c80585784c604f28"
-        BASHBREW_ARCHITECTURES: "amd64 arm64v8 ppc64le s390x"
+    - name: Mirror Eclipse Temurin from DockerHub to GHCR
       run: |
-        cd /home/runner/docker/official-images
+        set -e
 
-        # Process only the eclipse-temurin repo
-        bashbrew list eclipse-temurin | while read -r entry; do
-          echo "Processing entry: $entry"
+        DOCKERHUB_REPO="eclipse-temurin"
+        GHCR_USERNAME="${{ github.actor }}"
+        GHCR_REPO="eclipse-temurin"
+        PUSH_FLAG="--push"
 
-          # Build and push the image for all architectures defined in the manifest
-          bashbrew build "$entry"
-          bashbrew push --target-namespace "${{ github.repository_owner }}" "$entry"
+        function get_platforms() {
+          local images=${1}
+          platforms=""
+          for image in $images; do
+            _jq() {
+              echo "${image}" | base64 --decode | jq -r "${1}"
+            }
+            os=$(_jq '.os')
+            arch=$(_jq '.architecture')
+            variant=$(_jq '.variant')
+            platform="$os/$arch"
+            if [ -n "$variant" ] && [ "$variant" != "null" ]; then
+              platform="$platform/$variant"
+            fi
+            if [ -n "$platforms" ]; then
+              platforms="$platforms,"
+            fi
+            platforms="$platforms$platform"
+          done
+          echo "$platforms"
+        }
+
+        # Get DockerHub Token
+        # TOKEN=$(curl -s -H "Content-Type: application/json" -X POST -d '{"username": "${{ secrets.DOCKERHUB_USERNAME }}", "password": "${{ secrets.DOCKERHUB_PASSWORD }}"}' https://hub.docker.com/v2/users/login/ | jq -r .token)
+        # if [ -z "${TOKEN}" -o "${TOKEN}" == "null" ]; then
+        #   echo >&2 "error: cannot retrieve DockerHub token"
+        #   exit 1
+        # fi
+
+        # Retrieve Tag List
+        TAG_LIST=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags/?page_size=100" | jq -rc '.results | reverse | .[] | @base64')
+        for TAG in $TAG_LIST; do
+          _jq() {
+            echo "${TAG}" | base64 --decode | jq -r ${1}
+          }
+          TAG_NAME=$(_jq '.name')
+          TAG_IMAGES=$(echo "$(_jq '.images')" | jq -r '.[] | @base64')
+          TAG_PLATFORMS=$(get_platforms "${TAG_IMAGES}")
+
+          echo "::group::Copying ${DOCKERHUB_REPO}:${TAG_NAME} to ghcr.io/${GHCR_USERNAME}/${GHCR_REPO}:${TAG_NAME}"
+          echo "FROM --platform=\${TARGETPLATFORM:-linux/amd64} ${DOCKERHUB_REPO}:${TAG_NAME}" > Dockerfile.tmp
+
+          docker buildx build \
+            ${PUSH_FLAG} \
+            --platform "${TAG_PLATFORMS}" \
+            --tag "ghcr.io/${GHCR_USERNAME}/${GHCR_REPO}:${TAG_NAME}" \
+            --file ./Dockerfile.tmp .
+          echo "::endgroup"
         done
