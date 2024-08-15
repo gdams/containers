@@ -49,7 +49,7 @@ jobs:
           echo "$platforms"
         }
 
-        Get DockerHub Token
+        # Get DockerHub Token
         TOKEN=$(curl -s -H "Content-Type: application/json" -X POST -d '{"username": "${{ secrets.DOCKERHUB_USERNAME }}", "password": "${{ secrets.DOCKERHUB_PASSWORD }}"}' https://hub.docker.com/v2/users/login/ | jq -r .token)
         if [ -z "${TOKEN}" -o "${TOKEN}" == "null" ]; then
           echo >&2 "error: cannot retrieve DockerHub token"
@@ -57,7 +57,7 @@ jobs:
         fi
 
         # Retrieve Tag List
-        TAG_LIST=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags/?page_size=100" | jq -rc '.results | reverse | .[] | @base64')
+        TAG_LIST=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags/?page_size=10000" | jq -rc '.results | reverse | .[] | @base64')
         for TAG in $TAG_LIST; do
           _jq() {
             echo "${TAG}" | base64 --decode | jq -r ${1}
