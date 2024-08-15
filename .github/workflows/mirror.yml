@@ -6,7 +6,6 @@ on:
 
 jobs:
   mirror-temurin:
-    if: startsWith(github.repository, 'adoptium/')
     runs-on: ubuntu-latest
 
     steps:
