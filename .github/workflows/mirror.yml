@@ -70,7 +70,7 @@ jobs:
           docker buildx build \
             ${PUSH_FLAG} \
             --platform "${TAG_PLATFORMS}" \
-            --tag "ghcr.io$/{{ github.repository }}:${TAG_NAME}" \
+            --tag "ghcr.io/${{ github.repository }}:${TAG_NAME}" \
             --file ./Dockerfile.tmp .
           echo "::endgroup"
         done
