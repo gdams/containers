@@ -23,8 +23,6 @@ jobs:
         set -e
 
         DOCKERHUB_REPO="eclipse-temurin"
-        GHCR_USERNAME="${{ github.actor }}"
-        GHCR_REPO="eclipse-temurin"
         PUSH_FLAG="--push"
 
         function get_platforms() {
@@ -57,7 +55,7 @@ jobs:
         fi
 
         # Retrieve Tag List
-        TAG_LIST=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags/?page_size=10000" | jq -rc '.results | reverse | .[] | @base64')
+        TAG_LIST=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://registry.hub.docker.com/v2/repositories/library/eclipse-temurin/tags/?page_size=10000" | jq -rc '.results | reverse | .[] | @base64')
         for TAG in $TAG_LIST; do
           _jq() {
             echo "${TAG}" | base64 --decode | jq -r ${1}
@@ -66,13 +64,13 @@ jobs:
           TAG_IMAGES=$(echo "$(_jq '.images')" | jq -r '.[] | @base64')
           TAG_PLATFORMS=$(get_platforms "${TAG_IMAGES}")
 
-          echo "::group::Copying ${DOCKERHUB_REPO}:${TAG_NAME} to ghcr.io/${GHCR_USERNAME}/${GHCR_REPO}:${TAG_NAME}"
+          echo "::group::Copying ${DOCKERHUB_REPO}:${TAG_NAME} to ghcr.io/${{ github.repository }}:${TAG_NAME}"
           echo "FROM --platform=\${TARGETPLATFORM:-linux/amd64} ${DOCKERHUB_REPO}:${TAG_NAME}" > Dockerfile.tmp
 
           docker buildx build \
             ${PUSH_FLAG} \
             --platform "${TAG_PLATFORMS}" \
-            --tag "ghcr.io/${GHCR_USERNAME}/${GHCR_REPO}:${TAG_NAME}" \
+            --tag "ghcr.io$/{{ github.repository }}:${TAG_NAME}" \
             --file ./Dockerfile.tmp .
           echo "::endgroup"
         done
