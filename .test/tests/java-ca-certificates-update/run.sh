@@ -58,7 +58,7 @@ echo -n $?
 # Test run 4: Certificates are mounted and the environment variable is set. We expect both CMD1 and CMD2 to succeed.
 docker run --rm -e USE_SYSTEM_CA_CERTS=1 --volume=$testDir/certs:/certificates "$1" $CMD1 >&/dev/null
 echo -n $?
-docker run --rm -e USE_SYSTEM_CA_CERTS=1 --volume=$testDir/certs:/certificates "$1" "${CMD2[@]}" >&/dev/null
+docker run --rm -e USE_SYSTEM_CA_CERTS=1 --volume=$testDir/certs:/certificates "$1" "${CMD2[@]}"
 echo -n $?
 
 # Test run 5: Certificates are mounted and are symlinks (e.g. in Kubernetes as `Secret`s or `ConfigMap`s) and the
