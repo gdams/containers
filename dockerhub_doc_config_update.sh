@@ -174,7 +174,7 @@ function print_official_image_file() {
 	fi
 
 	# If arches doesn't contain all the arches in official_arches then revert to the official_manifest_block
-	if [[ -n "$official_arches" && $arches != "$official_arches" ]]; then
+	if [[ "$STRICT" == "true" && -n "$official_arches" && $arches != "$official_arches" ]]; then
 		printf "%s\n\n" "${official_manifest_block}" >> "${official_docker_image_file}"
 	
 	else
