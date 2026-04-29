@@ -12,8 +12,6 @@ jobs:
     if: startsWith(github.repository, 'gdams/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
       - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
 
       - name: Mirror images to GHCR
@@ -21,15 +19,9 @@ jobs:
           SOURCE: docker.io/library/eclipse-temurin
           TARGET: ghcr.io/${{ github.repository_owner }}/eclipse-temurin
         run: |
-          # Extract all tags from non-Windows manifest blocks
-          TAGS=$(awk -v RS='\n\n' '!/windows-amd64/' eclipse-temurin \
-            | grep -E '^(Shared)?Tags:' \
-            | sed 's/^[^:]*: //' \
-            | tr ',' '\n' \
-            | tr -d ' ' \
-            | sort -u)
+          TAGS=$(crane ls "$SOURCE")
+          echo "Found $(echo "$TAGS" | wc -l | tr -d ' ') tags to mirror"
 
-          echo "Found $(echo "$TAGS" | wc -l | tr -d ' ') unique tags to mirror"
           FAILED=0
           for TAG in $TAGS; do
             echo "Copying $TAG ..."
