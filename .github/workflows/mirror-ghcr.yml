@@ -2,9 +2,6 @@ name: Mirror to GHCR
 
 on:
   workflow_dispatch:
-  schedule:
-    # Run daily at 06:00 UTC
-    - cron: "0 6 * * *"
 
 permissions: read-all
 
@@ -12,7 +9,7 @@ jobs:
   mirror:
     permissions:
       packages: write
-    if: startsWith(github.repository, 'adoptium/')
+    if: startsWith(github.repository, 'gdams/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
